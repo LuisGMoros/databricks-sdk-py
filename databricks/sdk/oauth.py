@@ -171,6 +171,7 @@ def retrieve_token(
     use_header=False,
     headers=None,
 ) -> Token:
+    print("caching")
     logger.debug(f"Retrieving token for {client_id}")
     if use_params:
         if client_id:
@@ -181,7 +182,7 @@ def retrieve_token(
     if use_header:
         auth = requests.auth.HTTPBasicAuth(client_id, client_secret)
     else:
-        auth = IgnoreNetrcAuth()
+        auth = IgnoreNetrcAuth() 
     resp = requests.post(token_url, params, auth=auth, headers=headers)
     if not resp.ok:
         if resp.headers["Content-Type"].startswith("application/json"):

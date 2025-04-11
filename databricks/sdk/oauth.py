@@ -21,6 +21,9 @@ import requests.auth
 
 from ._base_client import _BaseClient, _fix_host_if_needed
 
+import os
+import random
+
 # Error code for PKCE flow in Azure Active Directory, that gets additional retry.
 # See https://stackoverflow.com/a/75466778/277035 for more info
 NO_ORIGIN_FOR_SPA_CLIENT_ERROR = "AADSTS9002327"
@@ -156,7 +159,6 @@ class Token:
 
 
 class TokenSource:
-
     @abstractmethod
     def token(self) -> Token:
         pass
@@ -171,7 +173,6 @@ def retrieve_token(
     use_header=False,
     headers=None,
 ) -> Token:
-    print("caching")
     logger.debug(f"Retrieving token for {client_id}")
     if use_params:
         if client_id:
@@ -182,28 +183,40 @@ def retrieve_token(
     if use_header:
         auth = requests.auth.HTTPBasicAuth(client_id, client_secret)
     else:
-        auth = IgnoreNetrcAuth() 
-    resp = requests.post(token_url, params, auth=auth, headers=headers)
-    if not resp.ok:
-        if resp.headers["Content-Type"].startswith("application/json"):
-            err = resp.json()
-            code = err.get("errorCode", err.get("error", "unknown"))
-            summary = err.get("errorSummary", err.get("error_description", "unknown"))
-            summary = summary.replace("\r\n", " ")
-            raise ValueError(f"{code}: {summary}")
-        raise ValueError(resp.content)
-    try:
-        j = resp.json()
-        expires_in = int(j["expires_in"])
-        expiry = datetime.now() + timedelta(seconds=expires_in)
-        return Token(
-            access_token=j["access_token"],
-            refresh_token=j.get("refresh_token"),
-            token_type=j["token_type"],
-            expiry=expiry,
-        )
-    except Exception as e:
-        raise NotImplementedError(f"Not supported yet: {e}")
+        auth = IgnoreNetrcAuth()
+
+    last_token = os.os.getenv("DATABRICKS_LAST_OAUTH_TOKEN", None)
+    last_token_time = os.os.getenv("DATABRICKS_LAST_OAUTH_TIME", 0)
+    jitter = random.randint(0, 5 * 60)
+    if not last_token or (datetime.now() - datetime.fromisoformat(last_token_time)).seconds > (300 + jitter):
+        resp = requests.post(token_url, params, auth=auth, headers=headers)
+        if not resp.ok:
+            if resp.headers["Content-Type"].startswith("application/json"):
+                err = resp.json()
+                code = err.get("errorCode", err.get("error", "unknown"))
+                summary = err.get("errorSummary", err.get("error_description", "unknown"))
+                summary = summary.replace("\r\n", " ")
+                raise ValueError(f"{code}: {summary}")
+            raise ValueError(resp.content)
+        try:
+            j = resp.json()
+            expires_in = int(j["expires_in"])
+            expiry = datetime.now() + timedelta(seconds=expires_in)
+            token_info = {
+                "access_token":j["access_token"],
+                "refresh_token":j.get("refresh_token"),
+                "token_type":j["token_type"],
+                "expiry":expiry,
+            }
+            os.environ["DATABRICKS_LAST_OAUTH_TOKEN"] = json.dumps(token_info)
+            print("caching")
+            return Token(**token_info)
+        except Exception as e:
+            raise NotImplementedError(f"Not supported yet: {e}")
+    else:
+        print("using cache")
+        token_info = json.loads(last_token)
+        return Token(**token_info)
 
 
 class _TokenState(Enum):
@@ -342,7 +355,6 @@ class Refreshable(TokenSource):
 
 
 class _OAuthCallback(BaseHTTPRequestHandler):
-
     def __init__(self, feedback: list, *args):
         self._feedback = feedback
         super().__init__(*args)
@@ -419,7 +431,6 @@ def get_azure_entra_id_workspace_endpoints(
 
 
 class SessionCredentials(Refreshable):
-
     def __init__(
         self,
         token: Token,
@@ -494,7 +505,6 @@ class SessionCredentials(Refreshable):
 
 
 class Consent:
-
     def __init__(
         self,
         state: str,

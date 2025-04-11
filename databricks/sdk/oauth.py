@@ -185,8 +185,8 @@ def retrieve_token(
     else:
         auth = IgnoreNetrcAuth()
 
-    last_token = os.os.getenv("DATABRICKS_LAST_OAUTH_TOKEN", None)
-    last_token_time = os.os.getenv("DATABRICKS_LAST_OAUTH_TIME", 0)
+    last_token = os.getenv("DATABRICKS_LAST_OAUTH_TOKEN", None)
+    last_token_time = os.getenv("DATABRICKS_LAST_OAUTH_TIME", 0)
     jitter = random.randint(0, 5 * 60)
     if not last_token or (datetime.now() - datetime.fromisoformat(last_token_time)).seconds > (300 + jitter):
         resp = requests.post(token_url, params, auth=auth, headers=headers)
@@ -209,12 +209,15 @@ def retrieve_token(
                 "expiry":expiry,
             }
             os.environ["DATABRICKS_LAST_OAUTH_TOKEN"] = json.dumps(token_info)
+            os.environ["DATABRICKS_LAST_OAUTH_TIME"] = datetime.now().isoformat()
             print("caching")
+            print(json.dumps(token_info))
             return Token(**token_info)
         except Exception as e:
             raise NotImplementedError(f"Not supported yet: {e}")
     else:
         print("using cache")
+        print(last_token)
         token_info = json.loads(last_token)
         return Token(**token_info)
 

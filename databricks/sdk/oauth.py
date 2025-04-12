@@ -212,6 +212,7 @@ def retrieve_token(
             os.environ["DATABRICKS_LAST_OAUTH_TIME"] = datetime.now().isoformat()
             print("caching")
             print(json.dumps(token_info))
+            token_info["expiry"] = datetime.fromisoformat(token_info["expiry"])
             return Token(**token_info)
         except Exception as e:
             raise NotImplementedError(f"Not supported yet: {e}")

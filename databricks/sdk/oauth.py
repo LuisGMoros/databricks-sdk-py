@@ -206,7 +206,7 @@ def retrieve_token(
                 "access_token":j["access_token"],
                 "refresh_token":j.get("refresh_token"),
                 "token_type":j["token_type"],
-                "expiry":expiry,
+                "expiry":expiry.isoformat(),
             }
             os.environ["DATABRICKS_LAST_OAUTH_TOKEN"] = json.dumps(token_info)
             os.environ["DATABRICKS_LAST_OAUTH_TIME"] = datetime.now().isoformat()
@@ -219,6 +219,7 @@ def retrieve_token(
         print("using cache")
         print(last_token)
         token_info = json.loads(last_token)
+        token_info["expiry"] = datetime.fromisoformat(token_info["expiry"])
         return Token(**token_info)
 
 

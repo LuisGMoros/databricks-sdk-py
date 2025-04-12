@@ -212,14 +212,12 @@ def retrieve_token(
             token_info["expiry"] = token_info["expiry"].isoformat()
             os.environ["DATABRICKS_LAST_OAUTH_TOKEN"] = json.dumps(token_info)
             os.environ["DATABRICKS_LAST_OAUTH_TIME"] = datetime.now().isoformat()
-            print("caching")
-            print(json.dumps(token_info))
+            print("caching OAuth token")
             return token
         except Exception as e:
             raise NotImplementedError(f"Not supported yet: {e}")
     else:
-        print("using cache")
-        print(last_token)
+        print("using cached OAuth token")
         token_info = json.loads(last_token)
         token_info["expiry"] = datetime.fromisoformat(token_info["expiry"])
         return Token(**token_info)

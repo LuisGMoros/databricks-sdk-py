@@ -24,6 +24,10 @@ from ._base_client import _BaseClient, _fix_host_if_needed
 import os
 import random
 
+from diskcache import Cache
+cache = Cache(directory="/tmp/oauth_cache")
+
+
 # Error code for PKCE flow in Azure Active Directory, that gets additional retry.
 # See https://stackoverflow.com/a/75466778/277035 for more info
 NO_ORIGIN_FOR_SPA_CLIENT_ERROR = "AADSTS9002327"
@@ -185,10 +189,11 @@ def retrieve_token(
     else:
         auth = IgnoreNetrcAuth()
 
-    last_token = os.getenv("DATABRICKS_LAST_OAUTH_TOKEN", None)
-    last_token_time = os.getenv("DATABRICKS_LAST_OAUTH_TIME", 0)
-    jitter = random.randint(0, 5 * 60)
-    if not last_token or (datetime.now() - datetime.fromisoformat(last_token_time)).seconds > (300 + jitter):
+    # last_token = os.getenv("DATABRICKS_LAST_OAUTH_TOKEN", None)
+    # last_token_time = os.getenv("DATABRICKS_LAST_OAUTH_TIME", 0)
+    # jitter = random.randint(0, 5 * 60)
+    last_token  = cache.get("oauth_info", None)
+    if not last_token: # or (datetime.now() - datetime.fromisoformat(last_token_time)).seconds > (300 + jitter):
         resp = requests.post(token_url, params, auth=auth, headers=headers)
         if not resp.ok:
             if resp.headers["Content-Type"].startswith("application/json"):
@@ -210,8 +215,12 @@ def retrieve_token(
             }
             token = Token(**token_info) 
             token_info["expiry"] = token_info["expiry"].isoformat()
-            os.environ["DATABRICKS_LAST_OAUTH_TOKEN"] = json.dumps(token_info)
-            os.environ["DATABRICKS_LAST_OAUTH_TIME"] = datetime.now().isoformat()
+            jitter = random.randint(0, 5 * 60)
+            oauth_cache_expire = 300 + jitter
+            with Cache(cache.directory) as reference:
+                reference.set('oauth_info', json.dumps(token_info), expire=oauth_cache_expire)
+            # os.environ["DATABRICKS_LAST_OAUTH_TOKEN"] = json.dumps(token_info)
+            # os.environ["DATABRICKS_LAST_OAUTH_TIME"] = datetime.now().isoformat()
             print("caching OAuth token")
             return token
         except Exception as e:

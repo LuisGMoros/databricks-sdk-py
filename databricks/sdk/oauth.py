@@ -23,9 +23,10 @@ from ._base_client import _BaseClient, _fix_host_if_needed
 
 import os
 import random
+import time
 
 from diskcache import Cache
-cache = Cache(directory="/tmp/oauth_cache")
+cache = Cache(directory=f"/tmp/oauth_cache")
 
 
 # Error code for PKCE flow in Azure Active Directory, that gets additional retry.
@@ -167,6 +168,32 @@ class TokenSource:
     def token(self) -> Token:
         pass
 
+def retry_request_with_exponential_backoff(token_url, params, auth, headers, max_retries=5, base_delay=1, max_delay=60, jitter=True):
+
+    for attempt in range(max_retries):
+        # make request
+        resp = requests.post(token_url, params, auth=auth, headers=headers)
+
+        # check if it was successfull
+        if not resp.ok:
+            if attempt == max_retries - 1:
+                if resp.headers["Content-Type"].startswith("application/json"):
+                    err = resp.json()
+                    code = err.get("errorCode", err.get("error", "unknown"))
+                    summary = err.get("errorSummary", err.get("error_description", "unknown"))
+                    summary = summary.replace("\r\n", " ")
+                    raise ValueError(f"{code}: {summary}")
+                raise ValueError(resp.content)
+
+            delay = base_delay * (2 ** attempt)
+            if jitter:
+                delay = random.uniform(0, delay)
+            delay = min(delay, max_delay)
+
+            print(f"Requet to {token_url} failed, retrying in {delay:.2f} seconds...")
+            time.sleep(delay)
+        else:
+            return resp
 
 def retrieve_token(
     client_id,
@@ -189,20 +216,9 @@ def retrieve_token(
     else:
         auth = IgnoreNetrcAuth()
 
-    # last_token = os.getenv("DATABRICKS_LAST_OAUTH_TOKEN", None)
-    # last_token_time = os.getenv("DATABRICKS_LAST_OAUTH_TIME", 0)
-    # jitter = random.randint(0, 5 * 60)
     last_token  = cache.get("oauth_info", None)
-    if not last_token: # or (datetime.now() - datetime.fromisoformat(last_token_time)).seconds > (300 + jitter):
-        resp = requests.post(token_url, params, auth=auth, headers=headers)
-        if not resp.ok:
-            if resp.headers["Content-Type"].startswith("application/json"):
-                err = resp.json()
-                code = err.get("errorCode", err.get("error", "unknown"))
-                summary = err.get("errorSummary", err.get("error_description", "unknown"))
-                summary = summary.replace("\r\n", " ")
-                raise ValueError(f"{code}: {summary}")
-            raise ValueError(resp.content)
+    if not last_token:
+        resp = retry_request_with_exponential_backoff(token_url, params, auth=auth, headers=headers)
         try:
             j = resp.json()
             expires_in = int(j["expires_in"])
@@ -219,8 +235,6 @@ def retrieve_token(
             oauth_cache_expire = 300 + jitter
             with Cache(cache.directory) as reference:
                 reference.set('oauth_info', json.dumps(token_info), expire=oauth_cache_expire)
-            # os.environ["DATABRICKS_LAST_OAUTH_TOKEN"] = json.dumps(token_info)
-            # os.environ["DATABRICKS_LAST_OAUTH_TIME"] = datetime.now().isoformat()
             print("caching OAuth token")
             return token
         except Exception as e:

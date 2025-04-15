@@ -235,12 +235,10 @@ def retrieve_token(
             oauth_cache_expire = 300 + jitter
             with Cache(cache.directory) as reference:
                 reference.set('oauth_info', json.dumps(token_info), expire=oauth_cache_expire)
-            print("caching OAuth token")
             return token
         except Exception as e:
             raise NotImplementedError(f"Not supported yet: {e}")
     else:
-        print("using cached OAuth token")
         token_info = json.loads(last_token)
         token_info["expiry"] = datetime.fromisoformat(token_info["expiry"])
         return Token(**token_info)

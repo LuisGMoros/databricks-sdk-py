@@ -204,8 +204,7 @@ def retrieve_token(
     use_header=False,
     headers=None,
 ) -> Token:
-    # logger.debug(f"Retrieving token for {client_id}")
-    logger.error(f"Retrieving token for {client_id}")
+    logger.debug(f"Retrieving token for {client_id}")
     if use_params:
         if client_id:
             params["client_id"] = client_id

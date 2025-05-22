@@ -168,32 +168,32 @@ class TokenSource:
     def token(self) -> Token:
         pass
 
-def retry_request_with_exponential_backoff(token_url, params, auth, headers, max_retries=5, base_delay=1, max_delay=60, jitter=True):
+# def retry_request_with_exponential_backoff(token_url, params, auth, headers, max_retries=5, base_delay=1, max_delay=60, jitter=True):
 
-    for attempt in range(max_retries):
-        # make request
-        resp = requests.post(token_url, params, auth=auth, headers=headers)
+#     for attempt in range(max_retries):
+#         # make request
+#         resp = requests.post(token_url, params, auth=auth, headers=headers)
 
-        # check if it was successfull
-        if not resp.ok:
-            if attempt == max_retries - 1:
-                if resp.headers["Content-Type"].startswith("application/json"):
-                    err = resp.json()
-                    code = err.get("errorCode", err.get("error", "unknown"))
-                    summary = err.get("errorSummary", err.get("error_description", "unknown"))
-                    summary = summary.replace("\r\n", " ")
-                    raise ValueError(f"{code}: {summary}")
-                raise ValueError(resp.content)
+#         # check if it was successfull
+#         if not resp.ok:
+#             if attempt == max_retries - 1:
+#                 if resp.headers["Content-Type"].startswith("application/json"):
+#                     err = resp.json()
+#                     code = err.get("errorCode", err.get("error", "unknown"))
+#                     summary = err.get("errorSummary", err.get("error_description", "unknown"))
+#                     summary = summary.replace("\r\n", " ")
+#                     raise ValueError(f"{code}: {summary}")
+#                 raise ValueError(resp.content)
 
-            delay = base_delay * (2 ** attempt)
-            if jitter:
-                delay = random.uniform(0, delay)
-            delay = min(delay, max_delay)
+#             delay = base_delay * (2 ** attempt)
+#             if jitter:
+#                 delay = random.uniform(0, delay)
+#             delay = min(delay, max_delay)
 
-            print(f"Requet to {token_url} failed, retrying in {delay:.2f} seconds...")
-            time.sleep(delay)
-        else:
-            return resp
+#             print(f"Requet to {token_url} failed, retrying in {delay:.2f} seconds...")
+#             time.sleep(delay)
+#         else:
+#             return resp
 
 def retrieve_token(
     client_id,
@@ -204,7 +204,7 @@ def retrieve_token(
     use_header=False,
     headers=None,
 ) -> Token:
-    logger.info(f"Retrieving token for {client_id}")
+    logger.error(f"Retrieving token for {client_id}, process ID: {os.getpid()}")
     if use_params:
         if client_id:
             params["client_id"] = client_id
@@ -216,32 +216,41 @@ def retrieve_token(
     else:
         auth = IgnoreNetrcAuth()
 
-    last_token  = cache.get("oauth_info", None)
-    if not last_token:
-        resp = retry_request_with_exponential_backoff(token_url, params, auth=auth, headers=headers)
-        try:
-            j = resp.json()
-            expires_in = int(j["expires_in"])
-            expiry = datetime.now() + timedelta(seconds=expires_in)
-            token_info = {
-                "access_token":j["access_token"],
-                "refresh_token":j.get("refresh_token"),
-                "token_type":j["token_type"],
-                "expiry":expiry
-            }
-            token = Token(**token_info) 
-            token_info["expiry"] = token_info["expiry"].isoformat()
-            jitter = random.randint(0, 5 * 60)
-            oauth_cache_expire = 300 + jitter
-            with Cache(cache.directory) as reference:
-                reference.set('oauth_info', json.dumps(token_info), expire=oauth_cache_expire)
-            return token
-        except Exception as e:
-            raise NotImplementedError(f"Not supported yet: {e}")
-    else:
-        token_info = json.loads(last_token)
-        token_info["expiry"] = datetime.fromisoformat(token_info["expiry"])
-        return Token(**token_info)
+    # last_token  = cache.get("oauth_info", None)
+    # if not last_token:
+    resp = resp = requests.post(token_url, params, auth=auth, headers=headers)
+    if not resp.ok:
+        if resp.headers["Content-Type"].startswith("application/json"):
+            err = resp.json()
+            code = err.get("errorCode", err.get("error", "unknown"))
+            summary = err.get("errorSummary", err.get("error_description", "unknown"))
+            summary = summary.replace("\r\n", " ")
+            raise ValueError(f"{code}: {summary}")
+        raise ValueError(resp.content)
+    #retry_request_with_exponential_backoff(token_url, params, auth=auth, headers=headers)
+    try:
+        j = resp.json()
+        expires_in = int(j["expires_in"])
+        expiry = datetime.now() + timedelta(seconds=expires_in)
+        token_info = {
+            "access_token":j["access_token"],
+            "refresh_token":j.get("refresh_token"),
+            "token_type":j["token_type"],
+            "expiry":expiry
+        }
+        token = Token(**token_info) 
+        # token_info["expiry"] = token_info["expiry"].isoformat()
+        # jitter = random.randint(0, 5 * 60)
+        # oauth_cache_expire = 300 + jitter
+        # with Cache(cache.directory) as reference:
+        #     reference.set('oauth_info', json.dumps(token_info), expire=oauth_cache_expire)
+        return token
+    except Exception as e:
+        raise NotImplementedError(f"Not supported yet: {e}")
+    # else:
+    #     token_info = json.loads(last_token)
+    #     token_info["expiry"] = datetime.fromisoformat(token_info["expiry"])
+    #     return Token(**token_info)
 
 
 class _TokenState(Enum):
